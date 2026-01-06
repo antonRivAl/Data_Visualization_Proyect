@@ -1,7 +1,7 @@
 library(shiny)
 library(dplyr)
 library(ggplot2)
-library(scales) # Para formatos bonitos en los ejes
+library(scales)
 
 shinyServer(function(input, output) {
   
@@ -328,3 +328,4 @@ shinyServer(function(input, output) {
   })
   
 })
+
