@@ -1,1 +1,1 @@
-# Data_Visualization_Proyect
+# Data_Visualization_Project
