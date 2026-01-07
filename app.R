@@ -23,7 +23,6 @@ load("data/airlines_final.RData")
 # -----------------------------------------------------------------------------
 
 unique_airlines <- sort(unique(flights$FlightAirlineName))
-
 unique_origins <- sort(unique(flights$origin)) 
 
 # -----------------------------------------------------------------------------
@@ -60,49 +59,49 @@ ui <- dashboardPage(
                                        "Day" = "weekday", 
                                        "Month" = "month")),
             
-            radioButtons("temp_analysis_type", "Analizar por:",
-                         choices = c("Aerolínea", "Aeropuerto Origen"),
-                         selected = "Aerolínea"),
+            radioButtons("temp_analysis_type", "Analyze by:",
+                         choices = c("Airline", "Origin Airport"),
+                         selected = "Airline"),
             
             uiOutput("temp_filter_ui"),
             
-            radioButtons("temp_view", "Tipo de Visualización:",
-                         choices = list("Tendencia (Línea)" = "line", 
-                                        "Mapa de Calor (Heatmap)" = "heatmap"))
+            radioButtons("temp_view", "Visualization Type:",
+                         choices = list("Trend (Line)" = "line", 
+                                        "Heatmap" = "heatmap"))
           ),
           
           box(
-            title = "Evolución de Retrasos", status = "primary", solidHeader = TRUE, width = 9,
+            title = "Delay Evolution", status = "primary", solidHeader = TRUE, width = 9,
             plotOutput("temporalPlot", height = "500px")
           )
         ),
         #fluidRow(
         #  box(
-        #    width = 12, title = "Descripción del Análisis",
-        #    "Este gráfico permite analizar patrones de retraso. Seleccione la granularidad para ver si los retrasos se acumulan a ciertas horas, meses o días específicos."
+        #    width = 12, title = "Analysis Description",
+        #    "This chart allows you to analyze delay patterns. Select the granularity to see if delays accumulate at specific hours, months, or days."
         #  )
         #)
       ),
       
-      # --- PESTAÑA 2: Mapa Geográfico ---
+      # --- TAB 2: Geographic Map ---
       tabItem(
         tabName = "map",
         fluidRow(
           box(
-            title = "Configuración del Mapa", status = "success", solidHeader = TRUE, width = 3,
+            title = "Map Configuration", status = "success", solidHeader = TRUE, width = 3,
             
-            selectInput("map_airline", "Aerolínea:",
-                        choices = c("Todas", unique_airlines),
-                        selected = "Todas"),
+            selectInput("map_airline", "Airline:",
+                        choices = c("All", unique_airlines),
+                        selected = "All"),
             
-            # NUEVO: Selector de Fecha y Hora (Rango)
+            # NEW: Date and Time Selector (Range)
             airDatepickerInput(
               inputId = "map_datetime_range",
-              label = "Seleccionar Rango de Fechas:",
+              label = "Select Date Range:",
               range = TRUE,             
-              timepicker = FALSE,       # <--- CAMBIO: Desactivamos la hora
-              placeholder = "Inicio - Fin",
-              dateFormat = "yyyy-MM-dd", # Formato limpio
+              timepicker = FALSE,       # <--- CHANGE: Time deactivated
+              placeholder = "Start - End",
+              dateFormat = "yyyy-MM-dd", # Clean format
               value = c("2013-01-01", "2013-01-31"),
               minDate = "2013-01-01",
               maxDate = "2013-12-31"
@@ -110,39 +109,39 @@ ui <- dashboardPage(
           ),
           
           box(
-            title = "Distribución de Rutas", status = "success", solidHeader = TRUE, width = 9,
+            title = "Route Distribution", status = "success", solidHeader = TRUE, width = 9,
             leafletOutput("routesMap", height = "600px")
           )
         )
       ),
       
-      # --- PESTAÑA 3: Comparativa (Performance) ---
+      # --- TAB 3: Performance Comparison ---
       tabItem(
         tabName = "performance",
         fluidRow(
           box(
-            title = "Métricas de Comparación", status = "warning", solidHeader = TRUE, width = 3,
+            title = "Comparison Metrics", status = "warning", solidHeader = TRUE, width = 3,
             
-            selectInput("perf_x_axis", "Eje X (Métrica 1):",
-                        choices = list("Número de Vuelos" = "count",
-                                       "Distancia Media" = "distance",
-                                       "Retraso Medio Salida" = "dep_delay",
-                                       "Retraso Medio Llegada" = "arr_delay",
-                                       "Eficiencia (Millas/Min)" = "efficiency",
-                                       "Tiempo de Vuelo Medio" = "air_time")),
-          
-          selectInput("perf_y_axis", "Eje Y (Métrica 2):",
-                      choices = list("Retraso Medio Llegada" = "arr_delay",
-                                     "Eficiencia (Millas/Min)" = "efficiency",
-                                     "Tiempo de Vuelo Medio" = "air_time",
-                                     "Número de Vuelos" = "count",
-                                     "Distancia Media" = "distance",
-                                     "Retraso Medio Salida" = "dep_delay"),
-                      selected = "efficiency")
+            selectInput("perf_x_axis", "X Axis (Metric 1):",
+                        choices = list("Number of Flights" = "count",
+                                       "Average Distance" = "distance",
+                                       "Avg Departure Delay" = "dep_delay",
+                                       "Avg Arrival Delay" = "arr_delay",
+                                       "Efficiency (Miles/Min)" = "efficiency",
+                                       "Avg Flight Time" = "air_time")),
+            
+            selectInput("perf_y_axis", "Y Axis (Metric 2):",
+                        choices = list("Avg Arrival Delay" = "arr_delay",
+                                       "Efficiency (Miles/Min)" = "efficiency",
+                                       "Avg Flight Time" = "air_time",
+                                       "Number of Flights" = "count",
+                                       "Average Distance" = "distance",
+                                       "Avg Departure Delay" = "dep_delay"),
+                        selected = "efficiency")
           ),
           
           box(
-            title = "Comparativa de Aerolíneas", status = "warning", solidHeader = TRUE, width = 9,
+            title = "Airline Comparison", status = "warning", solidHeader = TRUE, width = 9,
             plotOutput("performancePlot", height = "500px")
           )
         )
@@ -159,85 +158,85 @@ ui <- dashboardPage(
 
 server <- function(input, output, session) {
   # --------------------------------------------------------------------------
-  # Reacciones a Eventos
+  # Event Reactions
   # --------------------------------------------------------------------------
   
-  # VIS_1: Renderizar el selector dinámico (Aerolíneas o Aeropuertos)
+  # VIS_1: Render dynamic selector (Airlines or Airports)
   output$temp_filter_ui <- renderUI({
     
-    # Definimos opciones de estilo para el picker
+    # Define picker style options
     picker_options <- list(
       `actions-box` = TRUE, 
-      `live-search` = TRUE, # Permite buscar escribiendo
-      `selected-text-format` = "count > 3" # Si hay más de 3, pone "4 items selected" para no ocupar espacio
+      `live-search` = TRUE, # Allows searching by typing
+      `selected-text-format` = "count > 3" # If more than 3, displays "4 items selected" to save space
     )
     
-    if (input$temp_analysis_type == "Aerolínea") {
+    if (input$temp_analysis_type == "Airline") {
       pickerInput(
         inputId = "temp_selection", 
-        label = "Seleccionar Aerolínea(s):",
+        label = "Select Airline(s):",
         choices = unique_airlines,
         multiple = TRUE,
-        selected = unique_airlines[1], # Seleccionamos todas por defecto (opcional)
+        selected = unique_airlines[1], # Select first by default
         options = picker_options
       )
     } else {
       pickerInput(
         inputId = "temp_selection", 
-        label = "Seleccionar Aeropuerto(s):",
+        label = "Select Airport(s):",
         choices = unique_origins,
         multiple = TRUE,
-        selected = unique_origins[1], # Seleccionamos solo los 5 primeros para no saturar al principio
+        selected = unique_origins[1], # Select first by default
         options = picker_options
       )
     }
   })
   
-  # VIS_1: Dataset Filtrado
+  # VIS_1: Filtered Dataset
   filtered_flights <- reactive({
-    req(input$temp_selection) # Esperar a que el usuario seleccione algo
+    req(input$temp_selection) # Wait for user selection
     
     data <- flights
     
-    # Filtramos dependiendo de si estamos en modo Aerolínea o Aeropuerto
-    if (input$temp_analysis_type == "Aerolínea") {
+    # Filter depending on Airline or Airport mode
+    if (input$temp_analysis_type == "Airline") {
       data <- data %>% 
         filter(FlightAirlineName %in% input$temp_selection) %>%
-        mutate(group_col = FlightAirlineName) # Creamos una columna genérica para agrupar luego
+        mutate(group_col = FlightAirlineName) # Create generic column for grouping
     } else {
       data <- data %>% 
         filter(origin %in% input$temp_selection) %>%
-        mutate(group_col = origin) # Creamos una columna genérica
+        mutate(group_col = origin) # Create generic column
     }
     return(data)
   })
   
-  # VIS_1: Dataset Agregado
+  # VIS_1: Aggregated Dataset
   aggregated_data <- reactive({
     req(input$temp_granularity)
     data <- filtered_flights()
     granularity <- input$temp_granularity
     
     if (granularity == "hour") {
-      # Agrupar por hora
-      data_resumen <- data %>%
+      # Group by hour
+      summary_data <- data %>%
         group_by(group_col, hour) %>%
         summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
         rename(time_unit = hour)
       
     } else if (granularity == "month") {
-      # Agrupar por mes (TRANSFORMACIÓN A TEXTO)
-      data_resumen <- data %>%
+      # Group by month (TRANSFORM TO TEXT)
+      summary_data <- data %>%
         group_by(group_col, month) %>%
         summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
-        # Convertimos número de mes a Nombre (Jan, Feb...)
+        # Convert month number to Name (Jan, Feb...)
         mutate(time_unit = month.abb[month]) 
       
-      # Forzamos el orden de los meses (para que no salga alfabético Apr antes que Jan)
-      data_resumen$time_unit <- factor(data_resumen$time_unit, levels = month.abb)
+      # Force month order (to avoid alphabetical sorting)
+      summary_data$time_unit <- factor(summary_data$time_unit, levels = month.abb)
       
     } else { # weekday
-      data_resumen <- data %>%
+      summary_data <- data %>%
         mutate(full_date = as.Date(paste(year, month, day, sep = "-")),
                weekday_num = as.numeric(format(full_date, "%u")),
                weekday_label = format(full_date, "%a")) %>%
@@ -246,30 +245,30 @@ server <- function(input, output, session) {
         arrange(weekday_num) %>%
         rename(time_unit = weekday_label)
       
-      data_resumen$time_unit <- factor(data_resumen$time_unit, levels = unique(data_resumen$time_unit))
+      summary_data$time_unit <- factor(summary_data$time_unit, levels = unique(summary_data$time_unit))
     }
     
-    return(data_resumen)
+    return(summary_data)
   })
   
-  # VIS_2: Preparar datos de RUTAS (Aristas del grafo)
+  # VIS_2: Prepare ROUTE data (Graph edges)
   map_routes_data <- reactive({
     req(input$map_datetime_range) 
     
-    # Al usuario le pedimos días, pero internamente añadimos la hora para coger el día completo (desde las 00:00 del inicio hasta las 23:59 del fin)
+    # Request days from user, but internally add time to cover the full day
     start_date <- as.POSIXct(paste0(input$map_datetime_range[1], " 00:00:00"))
     end_date   <- as.POSIXct(paste0(input$map_datetime_range[2], " 23:59:59"))
     
-    # 1. Filtramos
+    # 1. Filter
     data <- flights %>%
       mutate(flight_datetime = as.POSIXct(time_hour, format="%Y-%m-%d %H:%M:%S")) %>% 
       filter(flight_datetime >= start_date & flight_datetime <= end_date)
     
-    if (input$map_airline != "Todas") {
+    if (input$map_airline != "All") {
       data <- data %>% filter(FlightAirlineName == input$map_airline)
     }
     
-    # 2. Agrupamos y Top 100
+    # 2. Group and Top 100
     routes <- data %>%
       group_by(origin, dest) %>%
       summarise(
@@ -280,7 +279,7 @@ server <- function(input, output, session) {
       arrange(desc(num_flights)) %>%
       slice_head(n = 100)
     
-    # 3. Coordenadas
+    # 3. Coordinates
     routes <- routes %>%
       left_join(airports %>% select(AirportIATA, Latitude, Longitude), 
                 by = c("origin" = "AirportIATA")) %>%
@@ -293,7 +292,7 @@ server <- function(input, output, session) {
     return(routes)
   })
   
-  # VIS_2: Preparar datos de AEROPUERTOS (Nodos del grafo)
+  # VIS_2: Prepare AIRPORT data (Graph nodes)
   map_airports_data <- reactive({
     routes <- map_routes_data()
     
@@ -305,75 +304,75 @@ server <- function(input, output, session) {
   })
   
   
-  # VIS_3: Preparar datos de KPIs por Aerolínea
+  # VIS_3: Prepare KPI data by Airline
   performance_data <- reactive({
     
-    # Tomamos el dataset limpio y agrupamos por aerolínea
+    # Take clean dataset and group by airline
     kpi_df <- flights %>%
       group_by(FlightAirlineName) %>%
       summarise(
-        # Métrica 1: Volumen total
+        # Metric 1: Total volume
         count = n(),
         
-        # Métrica 2: Distancia media
+        # Metric 2: Avg distance
         distance = mean(distance, na.rm = TRUE),
         
-        # Métrica 3: Tiempo en aire medio
+        # Metric 3: Avg air time
         air_time = mean(air_time, na.rm = TRUE),
         
-        # Métrica 4: Retraso Salida medio
+        # Metric 4: Avg Departure Delay
         dep_delay = mean(dep_delay, na.rm = TRUE),
         
-        # Métrica 5: Retraso Llegada medio
+        # Metric 5: Avg Arrival Delay
         arr_delay = mean(arr_delay, na.rm = TRUE),
         
-        # Métrica 6: Eficiencia (Millas recorridas por minuto de vuelo)
+        # Metric 6: Efficiency (Miles per minute of flight)
         efficiency = sum(distance, na.rm=T) / sum(air_time, na.rm=T),
         
-        # Métrica 7: Tasa de Retrasos (% de vuelos que llegan >15 min tarde)
+        # Metric 7: Delay Rate (% of flights arriving >15 min late)
         delay_rate = mean(arr_delay > 15, na.rm = TRUE) * 100,
         
         .groups = "drop"
       ) %>%
-      # Filtramos aerolíneas muy pequeñas (menos de 100 vuelos al año) para evitar ruido estadístico
+      # Filter very small airlines to avoid statistical noise
       filter(count > 100)
     
     return(kpi_df)
   })
   
   # --------------------------------------------------------------------------
-  # GRÁFICAS (Outputs)
+  # CHARTS (Outputs)
   # --------------------------------------------------------------------------
   
-  # Visualización 1 (VIS_1): Gráfico Temporal
+  # Visualization 1 (VIS_1): Temporal Chart
   output$temporalPlot <- renderPlot({
     
     df <- aggregated_data()
     view_type <- input$temp_view
     granularity <- input$temp_granularity
     
-    # Título y etiquetas dinámicas
-    entity_name <- input$temp_analysis_type # "Aerolínea" o "Aeropuerto"
-    plot_title <- paste("Retraso medio de salida por", granularity)
+    # Dynamic title and labels
+    entity_name <- input$temp_analysis_type # "Airline" or "Origin Airport"
+    plot_title <- paste("Average departure delay by", granularity)
     
     p <- ggplot(df, aes(x = time_unit, y = avg_delay)) +
       labs(title = plot_title,
-           x = "Tiempo",
-           y = "Retraso Medio (min)",
-           color = entity_name, # La leyenda cambia de nombre sola
-           fill = "Retraso") +
+           x = "Time",
+           y = "Average Delay (min)",
+           color = entity_name, 
+           fill = "Delay") +
       theme_minimal() +
       theme(plot.title = element_text(size = 16, face = "bold"),
             axis.text = element_text(size = 12))
     
-    # CORRECCIÓN: Si es por hora, forzamos todos los ticks del eje X
+    # FIX: If hour, force all X axis ticks
     if (granularity == "hour") {
       p <- p + scale_x_continuous(breaks = 0:23)
     }
     
     if (view_type == "line") {
       p + 
-        geom_line(aes(color = group_col, group = group_col), size = 1) +
+        geom_line(aes(color = group_col, group = group_col), linewidth = 1) +
         geom_point(aes(color = group_col), size = 2) +
         geom_hline(yintercept = 0, linetype = "dashed", color = "gray")
       
@@ -385,7 +384,7 @@ server <- function(input, output, session) {
     }
   })
   
-  # Visualizacion 2 (VIS_2): Mapa Interactivo
+  # Visualization 2 (VIS_2): Interactive Map
   output$routesMap <- renderLeaflet({
     routes <- map_routes_data()
     nodes <- map_airports_data()
@@ -396,7 +395,7 @@ server <- function(input, output, session) {
     
     pal_lines <- colorNumeric(palette = "YlOrRd", domain = routes$mean_time)
     
-    # Pintar Líneas
+    # Draw Lines
     if(nrow(routes) > 0) {
       for(i in 1:nrow(routes)){
         map <- map %>%
@@ -404,80 +403,76 @@ server <- function(input, output, session) {
             lng = c(routes$lon_org[i], routes$lon_dst[i]),
             lat = c(routes$lat_org[i], routes$lat_dst[i]),
             color = pal_lines(routes$mean_time[i]),
-            weight = 1.5, # Líneas un poco más finas para limpiar visualmente
+            weight = 1.5, 
             opacity = 0.5,
-            popup = paste("Ruta:", routes$origin[i], "-", routes$dest[i])
+            popup = paste("Route:", routes$origin[i], "-", routes$dest[i])
           )
       }
     }
     
-    # Pintar Círculos (MODIFICACIÓN DE TAMAÑO)
+    # Draw Circles (Logarithmic sizing)
     map <- map %>%
       addCircleMarkers(
         data = nodes,
         lng = ~lon_org, lat = ~lat_org,
         
-        # NUEVA FÓRMULA LOGARÍTMICA:
-        # log(x + 1) aplana la curva. Multiplicamos por 3 para dar un tamaño base visible.
+        # log(x + 1) flattens the curve. Multiply by 3 for a visible base size.
         radius = ~log(total_departures + 1) * 3, 
         
         color = "#0073e6",
         fillOpacity = 0.8,
         stroke = FALSE,
-        popup = ~paste("<b>Aeropuerto:</b>", origin, "<br>",
-                       "<b>Salidas en periodo:</b>", total_departures)
+        popup = ~paste("<b>Airport:</b>", origin, "<br>",
+                       "<b>Departures in period:</b>", total_departures)
       ) %>%
       addLegend("bottomright", pal = pal_lines, values = routes$mean_time,
-                title = "Tiempo Vuelo (min)", opacity = 1)
+                title = "Flight Time (min)", opacity = 1)
     
     return(map)
   })
   
-  # Visualizacion 3 (VIS_3): Gráfico de Dispersión (Scatter Plot)
+  # Visualization 3 (VIS_3): Scatter Plot
   output$performancePlot <- renderPlot({
     
     df <- performance_data()
     
-    # Capturamos las variables
+    # Capture variables
     x_var <- input$perf_x_axis
     y_var <- input$perf_y_axis
     
-    # Títulos
-    nombres_ejes <- c(
-      "count" = "Número total de Vuelos",
-      "distance" = "Distancia Media (millas)",
-      "dep_delay" = "Retraso Medio Salida (min)",
-      "arr_delay" = "Retraso Medio Llegada (min)",
-      "efficiency" = "Eficiencia (Millas/Min)",
-      "air_time" = "Tiempo de Vuelo Medio (min)"
+    # Axis labels mapping
+    axis_names <- c(
+      "count" = "Total Number of Flights",
+      "distance" = "Average Distance (miles)",
+      "dep_delay" = "Avg Departure Delay (min)",
+      "arr_delay" = "Avg Arrival Delay (min)",
+      "efficiency" = "Efficiency (Miles/Min)",
+      "air_time" = "Average Flight Time (min)"
     )
     
-    # Gráfico LIMPIO
+    # Build chart
     ggplot(df, aes(x = .data[[x_var]], y = .data[[y_var]])) +
       
-      # PUNTOS: Quitamos la leyenda de color
+      # POINTS
       geom_point(aes(size = count, color = FlightAirlineName), 
                  alpha = 0.7) + 
       
-      # ETIQUETAS: Nombres de aerolíneas
+      # LABELS: Airline names
       geom_text(aes(label = FlightAirlineName), 
-                vjust = -1, size = 3, check_overlap = FALSE) +
+                vjust = -1, linewidth = 3, check_overlap = FALSE) +
       
-      # De momento eliminada la línea discontinua
-      # geom_smooth(method = "lm", se = FALSE, color = "gray", linetype = "dashed") +
-      
-      scale_size_continuous(range = c(3, 18), name = "Volumen de Vuelos") +
+      scale_size_continuous(range = c(3, 18), name = "Flight Volume") +
       
       guides(
-        color = "none",   # <--- Ocultamos la leyenda de colores (Nombres)
-        size = "legend"   # <--- Mostramos la leyenda de tamaños (Bolas)
+        color = "none",   # Hide name color legend
+        size = "legend"   # Show size legend
       ) +
       
       labs(
-        title = paste("Análisis:", nombres_ejes[x_var], "vs", nombres_ejes[y_var]),
-        subtitle = "El tamaño de los puntos indica el volumen de vuelos.",
-        x = nombres_ejes[x_var],
-        y = nombres_ejes[y_var]
+        title = paste("Analysis:", axis_names[x_var], "vs", axis_names[y_var]),
+        subtitle = "Point size indicates flight volume.",
+        x = axis_names[x_var],
+        y = axis_names[y_var]
       ) +
       theme_light() +
       theme(
@@ -492,4 +487,3 @@ server <- function(input, output, session) {
 # -----------------------------------------------------------------------------
 
 shinyApp(ui, server)
-

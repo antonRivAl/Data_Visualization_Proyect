@@ -44,7 +44,7 @@ airlines = airlines[-1,]
 
 # Flights
 summary(flights)
-# There are several null values in the data
+# There are several null values in the data.
 dim(flights)
 # The dimensions of this dataset is 3367766 rows and 21 columns
 # Finally, we are going to rename the column "name" to "FlightAirlineName"
