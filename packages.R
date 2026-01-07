@@ -1,5 +1,6 @@
 install.packages("shiny")
 install.packages("shinydashboard")
+install.packages("shinyWidgets")
 install.packages("dplyr")
 install.packages("readr")      
 install.packages("tidyr") 
