@@ -16,7 +16,6 @@ library(shinyWidgets)
 
 load("data/flights_final.RData")
 load("data/airports_final.RData")
-load("data/airlines_final.RData")
 
 # -----------------------------------------------------------------------------
 # Data needed for the plots
@@ -75,12 +74,6 @@ ui <- dashboardPage(
             plotOutput("temporalPlot", height = "500px")
           )
         ),
-        #fluidRow(
-        #  box(
-        #    width = 12, title = "Analysis Description",
-        #    "This chart allows you to analyze delay patterns. Select the granularity to see if delays accumulate at specific hours, months, or days."
-        #  )
-        #)
       ),
       
       # --- TAB 2: Geographic Map ---
@@ -218,34 +211,30 @@ server <- function(input, output, session) {
     granularity <- input$temp_granularity
     
     if (granularity == "hour") {
-      # Group by hour
       summary_data <- data %>%
         group_by(group_col, hour) %>%
         summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
         rename(time_unit = hour)
       
     } else if (granularity == "month") {
-      # Group by month (TRANSFORM TO TEXT)
+      months <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+      
       summary_data <- data %>%
         group_by(group_col, month) %>%
         summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
-        # Convert month number to Name (Jan, Feb...)
-        mutate(time_unit = month.abb[month]) 
-      
-      # Force month order (to avoid alphabetical sorting)
-      summary_data$time_unit <- factor(summary_data$time_unit, levels = month.abb)
+        mutate(time_unit = factor(months[month], levels = months))
       
     } else { # weekday
+      days <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+      
       summary_data <- data %>%
         mutate(full_date = as.Date(paste(year, month, day, sep = "-")),
-               weekday_num = as.numeric(format(full_date, "%u")),
-               weekday_label = format(full_date, "%a")) %>%
-        group_by(group_col, weekday_num, weekday_label) %>%
+               weekday_num = as.numeric(format(full_date, "%u"))) %>%
+        group_by(group_col, weekday_num) %>%
         summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
         arrange(weekday_num) %>%
-        rename(time_unit = weekday_label)
-      
-      summary_data$time_unit <- factor(summary_data$time_unit, levels = unique(summary_data$time_unit))
+        mutate(time_unit = factor(days[weekday_num], levels = days))
     }
     
     return(summary_data)
@@ -253,11 +242,26 @@ server <- function(input, output, session) {
   
   # VIS_2: Prepare ROUTE data (Graph edges)
   map_routes_data <- reactive({
+    validate(
+      need(!is.null(input$map_datetime_range) && length(input$map_datetime_range) == 2, 
+           "Please select a valid start and end date.")
+    )
     req(input$map_datetime_range) 
     
     # Request days from user, but internally add time to cover the full day
-    start_date <- as.POSIXct(paste0(input$map_datetime_range[1], " 00:00:00"))
-    end_date   <- as.POSIXct(paste0(input$map_datetime_range[2], " 23:59:59"))
+    start_date <- tryCatch(
+      as.POSIXct(paste0(input$map_datetime_range[1], " 00:00:00")),
+      error = function(e) return(NULL)
+    )
+    end_date <- tryCatch(
+      as.POSIXct(paste0(input$map_datetime_range[2], " 23:59:59")),
+      error = function(e) return(NULL)
+    )
+    
+    # If there is an error
+    validate(
+      need(!is.null(start_date) && !is.null(end_date), "Invalid date format. Please try again.")
+    )
     
     # 1. Filter
     data <- flights %>%
@@ -393,7 +397,7 @@ server <- function(input, output, session) {
       addProviderTiles(providers$CartoDB.Positron) %>%
       setView(lng = -96, lat = 37.8, zoom = 4)
     
-    pal_lines <- colorNumeric(palette = "YlOrRd", domain = routes$mean_time)
+    pal_lines <- colorNumeric(palette = "viridis", domain = routes$mean_time)
     
     # Draw Lines
     if(nrow(routes) > 0) {

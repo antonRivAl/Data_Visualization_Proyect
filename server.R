@@ -6,118 +6,155 @@ library(scales)
 shinyServer(function(input, output) {
   
   # --------------------------------------------------------------------------
-  # Reacciones a Eventos
+  # Event Reactions
   # --------------------------------------------------------------------------
   
-  # VIS_1: Dataset Filtrado: Se actualiza cuando cambian las aerolíneas
-  filtered_flights <- reactive({
-    req(input$temp_airline) # Detiene la ejecución si no hay nada seleccionado
+  # VIS_1: Render dynamic selector (Airlines or Airports)
+  output$temp_filter_ui <- renderUI({
     
-    flights_clean %>%
-      filter(AirlineName %in% input$temp_airline)
+    # Define picker style options
+    picker_options <- list(
+      `actions-box` = TRUE, 
+      `live-search` = TRUE, # Allows searching by typing
+      `selected-text-format` = "count > 3" # If more than 3, displays "4 items selected" to save space
+    )
+    
+    if (input$temp_analysis_type == "Airline") {
+      pickerInput(
+        inputId = "temp_selection", 
+        label = "Select Airline(s):",
+        choices = unique_airlines,
+        multiple = TRUE,
+        selected = unique_airlines[1], # Select first by default
+        options = picker_options
+      )
+    } else {
+      pickerInput(
+        inputId = "temp_selection", 
+        label = "Select Airport(s):",
+        choices = unique_origins,
+        multiple = TRUE,
+        selected = unique_origins[1], # Select first by default
+        options = picker_options
+      )
+    }
   })
   
+  # VIS_1: Filtered Dataset
+  filtered_flights <- reactive({
+    req(input$temp_selection) # Wait for user selection
+    
+    data <- flights
+    
+    # Filter depending on Airline or Airport mode
+    if (input$temp_analysis_type == "Airline") {
+      data <- data %>% 
+        filter(FlightAirlineName %in% input$temp_selection) %>%
+        mutate(group_col = FlightAirlineName) # Create generic column for grouping
+    } else {
+      data <- data %>% 
+        filter(origin %in% input$temp_selection) %>%
+        mutate(group_col = origin) # Create generic column
+    }
+    return(data)
+  })
   
-  
-  
-  
-  
-  # VIS_1: Dataset Agregado: Calcula las medias según la granularidad elegida
+  # VIS_1: Aggregated Dataset
   aggregated_data <- reactive({
     req(input$temp_granularity)
     data <- filtered_flights()
-    
     granularity <- input$temp_granularity
     
-    # Lógica de agrupación según lo que el usuario elija
     if (granularity == "hour") {
-      # Agrupar por hora del día
-      data_resumen <- data %>%
-        group_by(AirlineName, hour) %>%
+      summary_data <- data %>%
+        group_by(group_col, hour) %>%
         summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
-        rename(time_unit = hour) # Unificamos nombre para el gráfico
+        rename(time_unit = hour)
       
     } else if (granularity == "month") {
-      # Agrupar por mes
-      data_resumen <- data %>%
-        group_by(AirlineName, month) %>%
-        summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
-        rename(time_unit = month)
+      months <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
       
-    } else { # granularity == "weekday"
-      # Agrupar por día de la semana, flights no tiene columna "weekday", hay que crearla.
-      data_resumen <- data %>%
-        # Creamos fecha completa para sacar el día de la semana
+      summary_data <- data %>%
+        group_by(group_col, month) %>%
+        summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
+        mutate(time_unit = factor(months[month], levels = months))
+      
+    } else { # weekday
+      days <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+      
+      summary_data <- data %>%
         mutate(full_date = as.Date(paste(year, month, day, sep = "-")),
-               weekday_num = as.numeric(format(full_date, "%u")), # 1=Lunes, 7=Domingo
-               weekday_label = format(full_date, "%a")) %>%       # Lun, Mar...
-        group_by(AirlineName, weekday_num, weekday_label) %>%
+               weekday_num = as.numeric(format(full_date, "%u"))) %>%
+        group_by(group_col, weekday_num) %>%
         summarise(avg_delay = mean(dep_delay, na.rm = TRUE), .groups = "drop") %>%
-        arrange(weekday_num) %>% # Ordenamos lunes a domingo
-        rename(time_unit = weekday_label)
-      
-      # Truco para que el gráfico ordene los días correctamente y no alfabéticamente
-      data_resumen$time_unit <- factor(data_resumen$time_unit, levels = unique(data_resumen$time_unit))
+        arrange(weekday_num) %>%
+        mutate(time_unit = factor(days[weekday_num], levels = days))
     }
     
-    return(data_resumen)
+    return(summary_data)
   })
   
-  
-  
-  
-  
-  # VIS_2: Preparar datos de RUTAS (Aristas del grafo)
+  # VIS_2: Prepare ROUTE data (Graph edges)
   map_routes_data <- reactive({
-    # Filtro básico por inputs
-    data <- flights_clean %>%
-      filter(month >= input$map_months[1] & month <= input$map_months[2])
+    validate(
+      need(!is.null(input$map_datetime_range) && length(input$map_datetime_range) == 2, 
+           "Please select a valid start and end date.")
+    )
+    req(input$map_datetime_range) 
     
-    # Filtro opcional de aerolínea (Si es "Todas" no filtramos)
-    if (input$map_airline != "Todas") {
-      data <- data %>% filter(AirlineName == input$map_airline)
+    # Request days from user, but internally add time to cover the full day
+    start_date <- tryCatch(
+      as.POSIXct(paste0(input$map_datetime_range[1], " 00:00:00")),
+      error = function(e) return(NULL)
+    )
+    end_date <- tryCatch(
+      as.POSIXct(paste0(input$map_datetime_range[2], " 23:59:59")),
+      error = function(e) return(NULL)
+    )
+    
+    # If there is an error
+    validate(
+      need(!is.null(start_date) && !is.null(end_date), "Invalid date format. Please try again.")
+    )
+    
+    # 1. Filter
+    data <- flights %>%
+      mutate(flight_datetime = as.POSIXct(time_hour, format="%Y-%m-%d %H:%M:%S")) %>% 
+      filter(flight_datetime >= start_date & flight_datetime <= end_date)
+    
+    if (input$map_airline != "All") {
+      data <- data %>% filter(FlightAirlineName == input$map_airline)
     }
     
-    # Agrupamos por Origen y Destino para crear las rutas únicas
+    # 2. Group and Top 100
     routes <- data %>%
       group_by(origin, dest) %>%
       summarise(
-        num_flights = n(),                    # Cantidad de vuelos
-        mean_time = mean(air_time, na.rm=T),  # Tiempo medio (grosor línea)
+        num_flights = n(),
+        mean_time = mean(air_time, na.rm=T),
         .groups = "drop"
       ) %>%
-      # Nos quedamos con las rutas más frecuentes para no colgar el navegador. Limitamos a las Top 100.
       arrange(desc(num_flights)) %>%
       slice_head(n = 100)
     
-    # JOIN 1: Coordenadas del ORIGEN
+    # 3. Coordinates
     routes <- routes %>%
-      left_join(airports %>% select(IATA, Latitude, Longitude), 
-                by = c("origin" = "IATA")) %>%
-      rename(lat_org = Latitude, lon_org = Longitude)
-    
-    # JOIN 2: Coordenadas del DESTINO
-    routes <- routes %>%
-      left_join(airports %>% select(IATA, Latitude, Longitude), 
-                by = c("dest" = "IATA")) %>%
-      rename(lat_dst = Latitude, lon_dst = Longitude)
-    
-    # Eliminamos rutas donde falten coordenadas (por si algún aeropuerto no cruza bien)
-    routes <- routes %>% filter(!is.na(lat_org) & !is.na(lat_dst))
+      left_join(airports %>% select(AirportIATA, Latitude, Longitude), 
+                by = c("origin" = "AirportIATA")) %>%
+      rename(lat_org = Latitude, lon_org = Longitude) %>%
+      left_join(airports %>% select(AirportIATA, Latitude, Longitude), 
+                by = c("dest" = "AirportIATA")) %>%
+      rename(lat_dst = Latitude, lon_dst = Longitude) %>%
+      filter(!is.na(lat_org) & !is.na(lat_dst))
     
     return(routes)
   })
   
-  
-  
-  
-  
-  # VIS_2: Preparar datos de AEROPUERTOS (Nodos del grafo)
+  # VIS_2: Prepare AIRPORT data (Graph nodes)
   map_airports_data <- reactive({
     routes <- map_routes_data()
     
-    # Necesitamos una lista única de aeropuertos afectados por las rutas seleccionadas para ponerles un círculo encima.
-    # Agrupamos por origen para ver el tráfico total de salida de ese aeropuerto
     airports_stats <- routes %>%
       group_by(origin, lat_org, lon_org) %>%
       summarise(total_departures = sum(num_flights), .groups = "drop")
@@ -126,206 +163,180 @@ shinyServer(function(input, output) {
   })
   
   
-  
-  
-  
-  
-  
-  # VIS_3: Preparar datos de KPIs por Aerolínea
+  # VIS_3: Prepare KPI data by Airline
   performance_data <- reactive({
     
-    # Tomamos el dataset limpio y agrupamos por aerolínea
-    kpi_df <- flights_clean %>%
-      group_by(AirlineName) %>%
+    # Take clean dataset and group by airline
+    kpi_df <- flights %>%
+      group_by(FlightAirlineName) %>%
       summarise(
-        # Métrica 1: Volumen total
+        # Metric 1: Total volume
         count = n(),
         
-        # Métrica 2: Distancia media
+        # Metric 2: Avg distance
         distance = mean(distance, na.rm = TRUE),
         
-        # Métrica 3: Tiempo en aire medio
+        # Metric 3: Avg air time
         air_time = mean(air_time, na.rm = TRUE),
         
-        # Métrica 4: Retraso Salida medio
+        # Metric 4: Avg Departure Delay
         dep_delay = mean(dep_delay, na.rm = TRUE),
         
-        # Métrica 5: Retraso Llegada medio
+        # Metric 5: Avg Arrival Delay
         arr_delay = mean(arr_delay, na.rm = TRUE),
         
-        # Métrica 6: Eficiencia (Millas recorridas por minuto de vuelo)
+        # Metric 6: Efficiency (Miles per minute of flight)
         efficiency = sum(distance, na.rm=T) / sum(air_time, na.rm=T),
         
-        # Métrica 7: Tasa de Retrasos (% de vuelos que llegan >15 min tarde)
+        # Metric 7: Delay Rate (% of flights arriving >15 min late)
         delay_rate = mean(arr_delay > 15, na.rm = TRUE) * 100,
         
         .groups = "drop"
       ) %>%
-      # Filtramos aerolíneas muy pequeñas (menos de 100 vuelos al año) para evitar ruido estadístico
+      # Filter very small airlines to avoid statistical noise
       filter(count > 100)
     
     return(kpi_df)
   })
   
-  
-  
-  
-  
   # --------------------------------------------------------------------------
-  # GRÁFICAS (Outputs)
+  # CHARTS (Outputs)
   # --------------------------------------------------------------------------
   
-  # Visualización 1 (VIS_1): Gráfico Temporal
+  # Visualization 1 (VIS_1): Temporal Chart
   output$temporalPlot <- renderPlot({
     
-    # Obtenemos los datos calculados arriba
     df <- aggregated_data()
     view_type <- input$temp_view
+    granularity <- input$temp_granularity
     
-    # Título dinámico
-    plot_title <- paste("Retraso medio de salida por", 
-                        switch(input$temp_granularity, 
-                               "hour" = "Hora del día", 
-                               "month" = "Mes", 
-                               "weekday" = "Día de la semana"))
+    # Dynamic title and labels
+    entity_name <- input$temp_analysis_type # "Airline" or "Origin Airport"
+    plot_title <- paste("Average departure delay by", granularity)
     
-    # Estructura base del gráfico
     p <- ggplot(df, aes(x = time_unit, y = avg_delay)) +
       labs(title = plot_title,
-           x = "Tiempo",
-           y = "Retraso Medio (minutos)",
-           color = "Aerolínea",
-           fill = "Retraso") +
+           x = "Time",
+           y = "Average Delay (min)",
+           color = entity_name, 
+           fill = "Delay") +
       theme_minimal() +
       theme(plot.title = element_text(size = 16, face = "bold"),
             axis.text = element_text(size = 12))
     
-    # Decisión: ¿Línea o Heatmap?
+    # FIX: If hour, force all X axis ticks
+    if (granularity == "hour") {
+      p <- p + scale_x_continuous(breaks = 0:23)
+    }
+    
     if (view_type == "line") {
       p + 
-        geom_line(aes(color = AirlineName, group = AirlineName), size = 1) +
-        geom_point(aes(color = AirlineName), size = 2) +
-        geom_hline(yintercept = 0, linetype = "dashed", color = "gray") # Línea de referencia 0
+        geom_line(aes(color = group_col, group = group_col), linewidth = 1) +
+        geom_point(aes(color = group_col), size = 2) +
+        geom_hline(yintercept = 0, linetype = "dashed", color = "gray")
       
     } else {
-      # Heatmap: Eje X = Tiempo, Eje Y = Aerolínea, Color = Retraso
       p + 
-        geom_tile(aes(y = AirlineName, fill = avg_delay), color = "white") +
-        scale_fill_viridis_c(option = "magma", direction = -1) + # Paleta de colores chula
-        labs(y = "") # Quitamos etiqueta Y porque los nombres ya lo dicen
+        geom_tile(aes(y = group_col, fill = avg_delay), color = "white") +
+        scale_fill_viridis_c(option = "magma", direction = -1) +
+        labs(y = entity_name)
     }
   })
   
-  
-  
-  
-  
-  # Visualizacion 2 (VIS_2): Mapa Interactivo
+  # Visualization 2 (VIS_2): Interactive Map
   output$routesMap <- renderLeaflet({
-    # Cargamos datos reactivos
     routes <- map_routes_data()
     nodes <- map_airports_data()
     
-    # Mapa base
     map <- leaflet() %>%
-      addProviderTiles(providers$CartoDB.Positron) %>% # Fondo claro y limpio
-      setView(lng = -96, lat = 37.8, zoom = 4) # Centrado en USA
+      addProviderTiles(providers$CartoDB.Positron) %>%
+      setView(lng = -96, lat = 37.8, zoom = 4)
     
-    # AÑADIR LÍNEAS (RUTAS)
-    # Leaflet en R no pinta dataframes de líneas directamente fácil, hay que iterar.
-    # Usamos un bucle para añadir cada segmento.
+    pal_lines <- colorNumeric(palette = "viridis", domain = routes$mean_time)
     
-    # Definimos una paleta de colores para el tiempo de vuelo
-    pal_lines <- colorNumeric(palette = "YlOrRd", domain = routes$mean_time)
-    
-    for(i in 1:nrow(routes)){
-      map <- map %>%
-        addPolylines(
-          lng = c(routes$lon_org[i], routes$lon_dst[i]),
-          lat = c(routes$lat_org[i], routes$lat_dst[i]),
-          color = pal_lines(routes$mean_time[i]), # Color según tiempo medio
-          weight = 2 + (routes$mean_time[i] / 100), # Grosor dinámico (base 2 + variable)
-          opacity = 0.6,
-          popup = paste("<b>Ruta:</b>", routes$origin[i], "-", routes$dest[i], "<br>",
-                        "<b>Vuelos:</b>", routes$num_flights[i], "<br>",
-                        "<b>Tiempo Medio:</b>", round(routes$mean_time[i], 0), "min")
-        )
+    # Draw Lines
+    if(nrow(routes) > 0) {
+      for(i in 1:nrow(routes)){
+        map <- map %>%
+          addPolylines(
+            lng = c(routes$lon_org[i], routes$lon_dst[i]),
+            lat = c(routes$lat_org[i], routes$lat_dst[i]),
+            color = pal_lines(routes$mean_time[i]),
+            weight = 1.5, 
+            opacity = 0.5,
+            popup = paste("Route:", routes$origin[i], "-", routes$dest[i])
+          )
+      }
     }
     
-    # AÑADIR CÍRCULOS (AEROPUERTOS)
+    # Draw Circles (Logarithmic sizing)
     map <- map %>%
       addCircleMarkers(
         data = nodes,
         lng = ~lon_org, lat = ~lat_org,
-        radius = ~sqrt(total_departures) * 2, # Tamaño según volumen de vuelos (raíz cuadrada para suavizar)
+        
+        # log(x + 1) flattens the curve. Multiply by 3 for a visible base size.
+        radius = ~log(total_departures + 1) * 3, 
+        
         color = "#0073e6",
         fillOpacity = 0.8,
         stroke = FALSE,
-        popup = ~paste("<b>Aeropuerto:</b>", origin, "<br>",
-                       "<b>Vuelos Totales:</b>", total_departures)
+        popup = ~paste("<b>Airport:</b>", origin, "<br>",
+                       "<b>Departures in period:</b>", total_departures)
       ) %>%
       addLegend("bottomright", pal = pal_lines, values = routes$mean_time,
-                title = "Tiempo Vuelo (min)",
-                opacity = 1)
+                title = "Flight Time (min)", opacity = 1)
     
     return(map)
   })
   
-  
-  
-  
-  
-  # Visualizacion 3 (VIS_3): Gráfico de Dispersión (Scatter Plot)
-  # --------------------------------------------------------------------------
+  # Visualization 3 (VIS_3): Scatter Plot
   output$performancePlot <- renderPlot({
     
     df <- performance_data()
     
-    # Capturamos las variables que el usuario eligió en la UI
+    # Capture variables
     x_var <- input$perf_x_axis
     y_var <- input$perf_y_axis
     
-    # Títulos bonitos para los ejes (Mapeo de nombre técnico -> nombre leíble)
-    nombres_ejes <- c(
-      "count" = "Número total de Vuelos",
-      "distance" = "Distancia Media (millas)",
-      "dep_delay" = "Retraso Medio Salida (min)",
-      "arr_delay" = "Retraso Medio Llegada (min)",
-      "efficiency" = "Eficiencia (Millas/Min)",
-      "air_time" = "Tiempo de Vuelo Medio (min)",
-      "delay_rate" = "Tasa de Retrasos (%)" # Añadido por si quieres incluirlo en el UI más tarde
+    # Axis labels mapping
+    axis_names <- c(
+      "count" = "Total Number of Flights",
+      "distance" = "Average Distance (miles)",
+      "dep_delay" = "Avg Departure Delay (min)",
+      "arr_delay" = "Avg Arrival Delay (min)",
+      "efficiency" = "Efficiency (Miles/Min)",
+      "air_time" = "Average Flight Time (min)"
     )
     
-    # Creamos el gráfico
-    # Nota: Usamos .data[[var]] para usar strings como nombres de variables en ggplot (moderno)
+    # Build chart
     ggplot(df, aes(x = .data[[x_var]], y = .data[[y_var]])) +
       
-      # PUNTOS: El tamaño depende del número de vuelos (contexto) y el color de la aerolínea
-      geom_point(aes(size = count, color = AirlineName), alpha = 0.7) +
+      # POINTS
+      geom_point(aes(size = count, color = FlightAirlineName), 
+                 alpha = 0.7) + 
       
-      # ETIQUETAS: Añadimos el nombre de la aerolínea al lado del punto
-      # check_overlap = TRUE evita que se encimen los textos si hay muchos
-      geom_text(aes(label = AirlineName), vjust = -1, size = 3, check_overlap = FALSE) +
+      # LABELS: Airline names
+      geom_text(aes(label = FlightAirlineName), 
+                vjust = -1, linewidth = 3, check_overlap = FALSE) +
       
-      # LÍNEA DE TENDENCIA: Para ver correlaciones (ej: a más vuelos, más retraso?)
-      geom_smooth(method = "lm", se = FALSE, color = "gray", linetype = "dashed") +
+      scale_size_continuous(range = c(3, 18), name = "Flight Volume") +
       
-      scale_size_continuous(range = c(3, 10)) + # Ajustar tamaño de las bolas
+      guides(
+        color = "none",   # Hide name color legend
+        size = "legend"   # Show size legend
+      ) +
+      
       labs(
-        title = paste("Relación entre", nombres_ejes[x_var], "y", nombres_ejes[y_var]),
-        subtitle = "Cada punto representa una aerolínea. El tamaño representa el volumen de vuelos.",
-        x = nombres_ejes[x_var],
-        y = nombres_ejes[y_var],
-        color = "Aerolínea",
-        size = "Volumen de Vuelos"
+        title = paste("Analysis:", axis_names[x_var], "vs", axis_names[y_var]),
+        subtitle = "Point size indicates flight volume.",
+        x = axis_names[x_var],
+        y = axis_names[y_var]
       ) +
       theme_light() +
       theme(
-        legend.position = "bottom",
         plot.title = element_text(size = 18, face = "bold"),
         axis.title = element_text(size = 14)
       )
   })
-  
 })
-
